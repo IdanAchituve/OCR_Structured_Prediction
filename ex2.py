@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import random
 from sklearn.utils import shuffle
 import os
-import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-#np.random.seed(999)
-#random.seed(999)
+np.random.seed(999)
+random.seed(999)
 
 curr_id_col = 0
 label_col = 1
@@ -165,7 +165,7 @@ def get_seq_as_list(data):
     y = data.iloc[:, label_col].values
     next_id_char = data.iloc[:, next_id_col].values
     seq = []
-    for ocr, label, next_id in zip(x,y, next_id_char):
+    for ocr, label, next_id in zip(x, y, next_id_char):
         # create tuple of x and y values and append to list
         seq.append((ocr, label))
 
@@ -192,25 +192,25 @@ def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
 
     # initialization of data structures
     seq_len = len(seq)
-    score_matrix = np.zeros((seq_len, num_eng_chars))  # save the score of the max path until each cell
-    index_matrix = np.zeros((seq_len, num_eng_chars))  # save the best previous char
-    y_hat = np.zeros(seq_len)  # the index of the max path
+    score_matrix = np.zeros((seq_len, num_eng_chars), dtype=int)  # save the score of the max path until each cell
+    index_matrix = np.zeros((seq_len, num_eng_chars), dtype=int)  # save the best previous char
+    y_hat = np.zeros(seq_len, dtype=int)  # the index of the max path
     dollar_idx = char_to_idx["$"]  # the index of the special token
 
     # find most probable sequence
     for x, y in seq:
         # for the first row
         for curr_char in range(num_eng_chars):
-            score_matrix[0, curr_char] = w * phi(x, curr_char, dollar_idx)  # per each possible char get the score
+            score_matrix[0, curr_char] = np.dot(w, np.transpose(phi(x, curr_char, dollar_idx)))  # per each possible char get the score
             index_matrix[0, curr_char] = dollar_idx  # the previous char is always the $ sign
 
         # recursion step
-        for row_idx in range(1,seq_len):
+        for row_idx in range(1, seq_len):
             for curr_char in range(num_eng_chars):
                 max_char_idx = 0
                 max_score = min_score
                 for prev_char in range(num_eng_chars):
-                    s = w * phi(x, curr_char, prev_char) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
+                    s = np.dot(w, np.transpose(phi(x, curr_char, prev_char))) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
                     if s > max_score:
                         max_score = s
                         max_char_idx = prev_char
@@ -228,11 +228,24 @@ def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
     if is_train:
         # get labels
         labels = [char_to_idx["$"]] + [char_to_idx[y] for x, y in seq]
-        for idx, curr_x, curr_y in enumerate(seq):
+        idx = 0
+        for curr_x, curr_y in seq:
             prev_pred_char_idx = y_hat[idx-1] if idx > 0 else dollar_idx
             w += phi(curr_x, char_to_idx[curr_y], labels[idx-1]) - phi(curr_x, y_hat[idx], prev_pred_char_idx)
+            idx += 1
 
     return y_hat, w
+
+
+def plot_w(path, w):
+
+    w = w.reshape((27, 27))[:-1, :-1]  # reshape w to matrix and remove the last row and the last column corresponding to the $ sign
+    w = np.transpose(w)  # transpose so rows will be prev char and columns current char
+    ticks = list("abcdefghijklmnopqrstuvwxyz")
+    sns.heatmap(w, cmap='Greys', cbar=False, xticklabels=ticks, yticklabels=ticks)
+    plt.yticks(rotation=360)
+    plt.savefig(path)
+    plt.close()
 
 
 # multi-class structured perceptron
@@ -241,7 +254,7 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
     print("\n")
 
     num_params_per_class = image_hight * image_width
-    num_eng_chars = len(char_to_idx) + 1
+    num_eng_chars = len(char_to_idx)
 
     # init weights: one weight vector per character and a 26*27 vector for bigram indicator
     w = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
@@ -269,7 +282,6 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
 
         print("Multi-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
 
-
     # test
     accum_preds = []
     test_accuracy = 0
@@ -283,16 +295,22 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
         Y = np.asarray(labels)
 
         # get the most likely sequence
-        y_hat, _ = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, True)
+        y_hat, _ = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, False)
 
         # calc accuracy
         test_accuracy += (Y == y_hat).sum()
 
-        accum_preds.append(y_hat.tolist())
+        # save predictions
+        seq_as_list = y_hat.tolist()
+        for char_idx in seq_as_list:
+            accum_preds.append(idx_to_char[char_idx])
 
-    print("Multi-Class Structured Perceptron Bigram test accuracy: " + str(test_accuracy / len(test.index)))
-    path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(test_accuracy, 4)) + ".csv"
+    accuracy = test_accuracy / len(test.index)
+    print("Multi-Class Structured Perceptron Bigram test accuracy: " + str(accuracy))
+    path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".csv"
     write_predictions(path, accum_preds)
+    save_w_path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".png"
+    plot_w(save_w_path, w[num_eng_chars * num_params_per_class:].copy())
 
 
 # read data files
@@ -304,7 +322,7 @@ def run(train_path, test_path, epochs):
     chars = list("abcdefghijklmnopqrstuvwxyz")
     char_to_idx = {c: i for i, c in enumerate(chars)}
     idx_to_char = {i: c for c, i in char_to_idx.items()}
-    
+
     #  multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char)
     #  multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_char)
 
@@ -317,7 +335,7 @@ if __name__ == '__main__':
 
     train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
     test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
-    epochs = 6
+    epochs = 3
     check_accuracy = False
 
     # create directory for writing results
@@ -327,8 +345,9 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
 
-    #for i in range(30):
-    run(train_path, test_path, epochs)
+    for i in range(5):
+        run(train_path, test_path, epochs)
+
 
     if check_accuracy:
 
