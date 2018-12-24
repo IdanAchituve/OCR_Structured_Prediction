@@ -1,10 +1,13 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import random
 from sklearn.utils import shuffle
 import os
+import sys
 
-np.random.seed(999)
+#np.random.seed(999)
+#random.seed(999)
 
 curr_id_col = 0
 label_col = 1
@@ -12,7 +15,7 @@ next_id_col = 2
 data_cols = range(6, 134)
 image_hight = 16
 image_width = 8
-
+min_score = -9999999
 
 def print_image(x):
 
@@ -65,7 +68,6 @@ def multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char):
         train_accuracy = 0
 
     # test
-    labels = preds = np.array([])
     accum_preds = []
     test_accuracy = 0
 
@@ -77,15 +79,10 @@ def multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char):
 
         # predict
         y_hat = np.argmax(np.dot(w, x))
+        if y_hat == char_to_idx[y]:
+            test_accuracy += 1
 
-        labels = np.append(labels, char_to_idx[y])
-        preds = np.append(preds, y_hat)
         accum_preds.append(idx_to_char[y_hat])
-
-        # at the end of each sequence check accuracy
-        if next_id == -1:
-            test_accuracy += np.array_equal(labels, preds)
-            labels = preds = np.array([])
 
     accuracy = test_accuracy/len(test.index)
     print("Multi-Class Perceptron test accuracy: " + str(accuracy))
@@ -120,7 +117,10 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
                     max_y_hat = y_hat
                     max_idx = idx
 
+            # update params
             w = w + phi(x, char_to_idx[y]) - phi(x, max_idx)
+
+            # log accuracy
             if max_idx == char_to_idx[y]:
                 train_accuracy += 1
 
@@ -128,7 +128,6 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
         train_accuracy = 0
 
     # test
-    labels = preds = np.array([])
     accum_preds = []
     test_accuracy = 0
 
@@ -147,14 +146,10 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
                 max_y_hat = y_hat
                 max_idx = idx
 
-        labels = np.append(labels, char_to_idx[y])
-        preds = np.append(preds, max_idx)
-        accum_preds.append(idx_to_char[max_idx])
+        if char_to_idx[y] == max_idx:
+            test_accuracy += 1
 
-        # at the end of each sequence check accuracy
-        if next_id == -1:
-            test_accuracy += np.array_equal(labels, preds)
-            labels = preds = np.array([])
+        accum_preds.append(idx_to_char[max_idx])
 
     accuracy = test_accuracy/len(test.index)
     print("Multi-Class Structured Perceptron test accuracy: " + str(accuracy))
@@ -162,94 +157,160 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
     write_predictions(path, accum_preds)
 
 
+# from dataframe to list of lists where each value is a tuple
+def get_seq_as_list(data):
+
+    sequnces = []
+    x = data.iloc[:, data_cols].values
+    y = data.iloc[:, label_col].values
+    next_id_char = data.iloc[:, next_id_col].values
+    seq = []
+    for ocr, label, next_id in zip(x,y, next_id_char):
+        # create tuple of x and y values and append to list
+        seq.append((ocr, label))
+
+        # on the last char append the sequence to the sequences list
+        if next_id == -1:
+            sequnces.append(seq)
+            seq = []
+
+    return sequnces
+
+
+def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
+
+    def phi(x, y, prev_char_idx):
+        vec = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
+        x_start_idx = y*num_params_per_class  # start place for coping vector
+        x_end_idx = x_start_idx + num_params_per_class  # end place for coping vector
+        vec[x_start_idx:x_end_idx] = x
+        bigram_idx = num_eng_chars * num_params_per_class + y * num_eng_chars + prev_char_idx  # bigram indicator placing
+        vec[bigram_idx] = 1
+        return vec
+
+    num_params_per_class = image_hight * image_width
+
+    # initialization of data structures
+    seq_len = len(seq)
+    score_matrix = np.zeros((seq_len, num_eng_chars))  # save the score of the max path until each cell
+    index_matrix = np.zeros((seq_len, num_eng_chars))  # save the best previous char
+    y_hat = np.zeros(seq_len)  # the index of the max path
+    dollar_idx = char_to_idx["$"]  # the index of the special token
+
+    # find most probable sequence
+    for x, y in seq:
+        # for the first row
+        for curr_char in range(num_eng_chars):
+            score_matrix[0, curr_char] = w * phi(x, curr_char, dollar_idx)  # per each possible char get the score
+            index_matrix[0, curr_char] = dollar_idx  # the previous char is always the $ sign
+
+        # recursion step
+        for row_idx in range(1,seq_len):
+            for curr_char in range(num_eng_chars):
+                max_char_idx = 0
+                max_score = min_score
+                for prev_char in range(num_eng_chars):
+                    s = w * phi(x, curr_char, prev_char) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
+                    if s > max_score:
+                        max_score = s
+                        max_char_idx = prev_char
+
+                score_matrix[row_idx, curr_char] = s  # save max score
+                index_matrix[row_idx, curr_char] = max_char_idx  # save the prev char that generated that max score
+
+    # backtrack
+    best_final_char_idx = np.argmax(score_matrix[seq_len-1:])
+    y_hat[seq_len-1] = best_final_char_idx
+    for char_in_word_idx in range(seq_len-2, -1):
+        y_hat[char_in_word_idx] = index_matrix[char_in_word_idx+1, y_hat[char_in_word_idx+1]]
+
+    # update params in case of training
+    if is_train:
+        # get labels
+        labels = [char_to_idx["$"]] + [char_to_idx[y] for x, y in seq]
+        for idx, curr_x, curr_y in enumerate(seq):
+            prev_pred_char_idx = y_hat[idx-1] if idx > 0 else dollar_idx
+            w += phi(curr_x, char_to_idx[curr_y], labels[idx-1]) - phi(curr_x, y_hat[idx], prev_pred_char_idx)
+
+    return y_hat, w
+
+
 # multi-class structured perceptron
 def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, idx_to_char):
 
-    def phi(x, y, prev_char_idx):
-        vec = np.zeros(num_chars * num_params_per_class + num_chars*len(char_to_idx))
-        place_x_start = y*num_params_per_class  # start place for coping vector
-        place_x_end = place_x_start + num_params_per_class  # end place for coping vector
-        place_bigram_ind = place_x_end + y*len(char_to_idx) + prev_char_idx  # bigram indicator placing
-        vec[place_x_start:place_x_end] = x
-        vec[place_bigram_ind] = 1
-        return vec
-
     print("\n")
-    num_params_per_class = image_hight*image_width
-    num_chars = len(char_to_idx) - 1
+
+    num_params_per_class = image_hight * image_width
+    num_eng_chars = len(char_to_idx) + 1
+
     # init weights: one weight vector per character and a 26*27 vector for bigram indicator
-    w = np.zeros(num_chars * num_params_per_class + num_chars*len(char_to_idx))
+    w = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
+
+    # get the train set as a list of lists. each internal list is a sequence
+    train_set = get_seq_as_list(train)
 
     # train
     train_accuracy = 0  # check accuracy at the char level
     for epoch in range(epochs):
-        # in each epoch reshuffle the set
-        x_train, y_train, next_id_train = get_x_y_shuffled(train)
-        prev_char = "$"
-        for x, y, next_id in zip(x_train, y_train, next_id_train):
-            max_y_hat = 0.0
-            max_idx = 0
-            for char, idx in char_to_idx.items():
-                y_hat = np.dot(w, np.transpose(phi(x, idx)))
-                if y_hat > max_y_hat:
-                    max_y_hat = y_hat
-                    max_idx = idx
 
-            w = w + phi(x, char_to_idx[y]) - phi(x, max_idx)
-            if max_idx == char_to_idx[y]:
-                train_accuracy += 1
+        # in each epoch reshuffle the set - the internal order of sequences remain but the the order of sequences is reordered
+        random.shuffle(train_set)
+        for seq in train_set:
 
-        print("Multi-Class Structured Perceptron train accuracy: " + str(train_accuracy / len(x_train)))
-        train_accuracy = 0
+            # get labels
+            labels = [char_to_idx[y] for x, y in seq]
+            Y = np.asarray(labels)
+
+            # get the most likely sequence
+            y_hat, w = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, True)
+
+            # calc accuracy
+            train_accuracy += (Y == y_hat).sum()
+
+        print("Multi-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
+
 
     # test
-    labels = preds = np.array([])
     accum_preds = []
     test_accuracy = 0
 
-    # get rel data
-    x_test = test.iloc[:, data_cols].values
-    y_test = test.iloc[:, label_col].values
-    next_id_test = test.iloc[:, next_id_col].values
-    for x, y, next_id in zip(x_test, y_test, next_id_test):
+    # get the train set as a list of lists. each internal list is a sequence
+    test_set = get_seq_as_list(test)
 
-        # predict
-        max_y_hat = 0.0
-        max_idx = 0
-        for char, idx in char_to_idx.items():
-            y_hat = np.dot(w, np.transpose(phi(x, idx)))
-            if y_hat > max_y_hat:
-                max_y_hat = y_hat
-                max_idx = idx
+    for seq in test_set:
+        # get labels
+        labels = [char_to_idx[y] for x, y in seq]
+        Y = np.asarray(labels)
 
-        labels = np.append(labels, char_to_idx[y])
-        preds = np.append(preds, max_idx)
-        accum_preds.append(idx_to_char[max_idx])
+        # get the most likely sequence
+        y_hat, _ = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, True)
 
-        # at the end of each sequence check accuracy
-        if next_id == -1:
-            test_accuracy += np.array_equal(labels, preds)
-            labels = preds = np.array([])
+        # calc accuracy
+        test_accuracy += (Y == y_hat).sum()
 
-    accuracy = test_accuracy/len(test.index)
-    print("Multi-Class Structured Perceptron test accuracy: " + str(accuracy))
-    path = "./output/multiclass_structured_perceptron/multiclass_structured_perceptron_" + str(round(accuracy, 4)) + ".csv"
+        accum_preds.append(y_hat.tolist())
+
+    print("Multi-Class Structured Perceptron Bigram test accuracy: " + str(test_accuracy / len(test.index)))
+    path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(test_accuracy, 4)) + ".csv"
     write_predictions(path, accum_preds)
 
 
 # read data files
 def run(train_path, test_path, epochs):
 
-    train = pd.read_csv(train_path, sep="\t", header=None)
-    test = pd.read_csv(test_path, sep="\t", header=None)
+    heder_names = ["id", "letter", "next_id", "word_id", "position", "fold"] + ["x_" + str(i) for i in range(image_hight*image_width)]
+    train = pd.read_csv(train_path, sep="\t", header=None, names=heder_names, index_col=False)
+    test = pd.read_csv(test_path, sep="\t", header=None, names=heder_names, index_col=False)
     chars = list("abcdefghijklmnopqrstuvwxyz")
     char_to_idx = {c: i for i, c in enumerate(chars)}
     idx_to_char = {i: c for c, i in char_to_idx.items()}
-    multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char)
-    multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_char)
+    
+    #  multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char)
+    #  multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_char)
 
     char_to_idx["$"] = 26
     idx_to_char[26] = "$"
+    multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, idx_to_char)
 
 
 if __name__ == '__main__':
@@ -257,6 +318,7 @@ if __name__ == '__main__':
     train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
     test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
     epochs = 6
+    check_accuracy = False
 
     # create directory for writing results
     path = "./output/"
@@ -265,4 +327,20 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
 
+    #for i in range(30):
     run(train_path, test_path, epochs)
+
+    if check_accuracy:
+
+        x1 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/test_labels.csv", header=None, index_col=False, names=["x1"])
+        x2 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/multiclass_perceptron/multiclass_perceptron_0.6370.csv", header=None, index_col=False, names=["x2"])
+
+        x1ToList = x1['x1'].tolist()
+        x2ToList = x2['x2'].tolist()
+
+        check = 0
+        for c1, c2 in zip(x1ToList, x2ToList):
+            if c1 == c2:
+                check += 1
+
+        print(check)
