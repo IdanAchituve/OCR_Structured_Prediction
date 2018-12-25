@@ -5,6 +5,7 @@ from sklearn.utils import shuffle
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
+import time
 
 np.random.seed(999)
 random.seed(999)
@@ -207,21 +208,21 @@ def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
         # recursion step
         for row_idx in range(1, seq_len):
             for curr_char in range(num_eng_chars):
-                max_char_idx = 0
-                max_score = min_score
+                max_char_idx = -1
+                max_score = -1
                 for prev_char in range(num_eng_chars):
                     s = np.dot(w, np.transpose(phi(x, curr_char, prev_char))) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
-                    if s > max_score:
+                    if s > max_score or prev_char == 0:
                         max_score = s
                         max_char_idx = prev_char
 
-                score_matrix[row_idx, curr_char] = s  # save max score
+                score_matrix[row_idx, curr_char] = max_score  # save max score
                 index_matrix[row_idx, curr_char] = max_char_idx  # save the prev char that generated that max score
 
     # backtrack
     best_final_char_idx = np.argmax(score_matrix[seq_len-1:])
     y_hat[seq_len-1] = best_final_char_idx
-    for char_in_word_idx in range(seq_len-2, -1):
+    for char_in_word_idx in range(seq_len-2, -1, -1):
         y_hat[char_in_word_idx] = index_matrix[char_in_word_idx+1, y_hat[char_in_word_idx+1]]
 
     # update params in case of training
@@ -231,7 +232,7 @@ def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
         idx = 0
         for curr_x, curr_y in seq:
             prev_pred_char_idx = y_hat[idx-1] if idx > 0 else dollar_idx
-            w += phi(curr_x, char_to_idx[curr_y], labels[idx-1]) - phi(curr_x, y_hat[idx], prev_pred_char_idx)
+            w += phi(curr_x, char_to_idx[curr_y], labels[idx]) - phi(curr_x, y_hat[idx], prev_pred_char_idx)
             idx += 1
 
     return y_hat, w
@@ -258,9 +259,10 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
 
     # init weights: one weight vector per character and a 26*27 vector for bigram indicator
     w = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
+    start_time = time.time()
 
     # get the train set as a list of lists. each internal list is a sequence
-    train_set = get_seq_as_list(train)
+    train_set = get_seq_as_list(train)[:500]
 
     # train
     train_accuracy = 0  # check accuracy at the char level
@@ -268,7 +270,10 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
 
         # in each epoch reshuffle the set - the internal order of sequences remain but the the order of sequences is reordered
         random.shuffle(train_set)
-        for seq in train_set:
+        for idx, seq in enumerate(train_set):
+
+            if epoch == 1 and idx == 100:
+                ddd = 1
 
             # get labels
             labels = [char_to_idx[y] for x, y in seq]
@@ -280,14 +285,20 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
             # calc accuracy
             train_accuracy += (Y == y_hat).sum()
 
-        print("Multi-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
+            #if idx < 50:
+            #    fname = "./output/w/w_" + str(epoch) + "_" + str(idx) + ".csv"
+            #    np.savetxt(fname, w)
+
+        elapsed_time = time.time() - start_time
+        time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
+        print(str(time_str) + "\tMulti-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
 
     # test
     accum_preds = []
     test_accuracy = 0
 
     # get the train set as a list of lists. each internal list is a sequence
-    test_set = get_seq_as_list(test)
+    test_set = get_seq_as_list(test)[:500]
 
     for seq in test_set:
         # get labels
@@ -306,7 +317,11 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
             accum_preds.append(idx_to_char[char_idx])
 
     accuracy = test_accuracy / len(test.index)
-    print("Multi-Class Structured Perceptron Bigram test accuracy: " + str(accuracy))
+
+    elapsed_time = time.time() - start_time
+    time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
+
+    print(str(time_str) + "\tMulti-Class Structured Perceptron Bigram test accuracy: " + str(accuracy))
     path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".csv"
     write_predictions(path, accum_preds)
     save_w_path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".png"
@@ -335,7 +350,7 @@ if __name__ == '__main__':
 
     train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
     test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
-    epochs = 3
+    epochs = 2
     check_accuracy = False
 
     # create directory for writing results
@@ -345,8 +360,8 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
 
-    for i in range(5):
-        run(train_path, test_path, epochs)
+    #for i in range(5):
+    run(train_path, test_path, epochs)
 
 
     if check_accuracy:
