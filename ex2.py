@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-np.random.seed(999)
-random.seed(999)
+# np.random.seed(999)
+# random.seed(999)
 
 curr_id_col = 0
 label_col = 1
@@ -165,6 +165,7 @@ def get_seq_as_list(data):
     x = data.iloc[:, data_cols].values
     y = data.iloc[:, label_col].values
     next_id_char = data.iloc[:, next_id_col].values
+
     seq = []
     for ocr, label, next_id in zip(x, y, next_id_char):
         # create tuple of x and y values and append to list
@@ -199,28 +200,29 @@ def viterbi(seq, w, num_eng_chars, char_to_idx, is_train=True):
     dollar_idx = char_to_idx["$"]  # the index of the special token
 
     # find most probable sequence
-    for x, y in seq:
-        # for the first row
+    # for the first row
+    x = seq[0][0]
+    for curr_char in range(num_eng_chars):
+        score_matrix[0, curr_char] = np.dot(w, np.transpose(phi(x, curr_char, dollar_idx)))  # per each possible char get the score
+        index_matrix[0, curr_char] = dollar_idx  # the previous char is always the $ sign
+
+    # recursion step
+    for row_idx in range(1, seq_len):
+        x = seq[row_idx][0]
         for curr_char in range(num_eng_chars):
-            score_matrix[0, curr_char] = np.dot(w, np.transpose(phi(x, curr_char, dollar_idx)))  # per each possible char get the score
-            index_matrix[0, curr_char] = dollar_idx  # the previous char is always the $ sign
+            max_char_idx = -1
+            max_score = -1
+            for prev_char in range(num_eng_chars):
+                s = np.dot(w, np.transpose(phi(x, curr_char, prev_char))) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
+                if s > max_score or prev_char == 0:
+                    max_score = s
+                    max_char_idx = prev_char
 
-        # recursion step
-        for row_idx in range(1, seq_len):
-            for curr_char in range(num_eng_chars):
-                max_char_idx = -1
-                max_score = -1
-                for prev_char in range(num_eng_chars):
-                    s = np.dot(w, np.transpose(phi(x, curr_char, prev_char))) + score_matrix[row_idx-1, prev_char]  # per each possible char get the score
-                    if s > max_score or prev_char == 0:
-                        max_score = s
-                        max_char_idx = prev_char
-
-                score_matrix[row_idx, curr_char] = max_score  # save max score
-                index_matrix[row_idx, curr_char] = max_char_idx  # save the prev char that generated that max score
+            score_matrix[row_idx, curr_char] = max_score  # save max score
+            index_matrix[row_idx, curr_char] = max_char_idx  # save the prev char that generated that max score
 
     # backtrack
-    best_final_char_idx = np.argmax(score_matrix[seq_len-1:])
+    best_final_char_idx = np.argmax(score_matrix[seq_len-1, :])
     y_hat[seq_len-1] = best_final_char_idx
     for char_in_word_idx in range(seq_len-2, -1, -1):
         y_hat[char_in_word_idx] = index_matrix[char_in_word_idx+1, y_hat[char_in_word_idx+1]]
@@ -262,18 +264,15 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
     start_time = time.time()
 
     # get the train set as a list of lists. each internal list is a sequence
-    train_set = get_seq_as_list(train)[:500]
+    train_set = get_seq_as_list(train)
 
     # train
-    train_accuracy = 0  # check accuracy at the char level
     for epoch in range(epochs):
 
         # in each epoch reshuffle the set - the internal order of sequences remain but the the order of sequences is reordered
         random.shuffle(train_set)
+        train_accuracy = 0
         for idx, seq in enumerate(train_set):
-
-            if epoch == 1 and idx == 100:
-                ddd = 1
 
             # get labels
             labels = [char_to_idx[y] for x, y in seq]
@@ -285,10 +284,6 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
             # calc accuracy
             train_accuracy += (Y == y_hat).sum()
 
-            #if idx < 50:
-            #    fname = "./output/w/w_" + str(epoch) + "_" + str(idx) + ".csv"
-            #    np.savetxt(fname, w)
-
         elapsed_time = time.time() - start_time
         time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
         print(str(time_str) + "\tMulti-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
@@ -298,7 +293,7 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
     test_accuracy = 0
 
     # get the train set as a list of lists. each internal list is a sequence
-    test_set = get_seq_as_list(test)[:500]
+    test_set = get_seq_as_list(test)
 
     for seq in test_set:
         # get labels
@@ -306,7 +301,7 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
         Y = np.asarray(labels)
 
         # get the most likely sequence
-        y_hat, _ = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, False)
+        y_hat, _ = viterbi(seq, w, num_eng_chars, char_to_idx, False)
 
         # calc accuracy
         test_accuracy += (Y == y_hat).sum()
@@ -350,8 +345,8 @@ if __name__ == '__main__':
 
     train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
     test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
-    epochs = 2
-    check_accuracy = False
+    epochs = 5
+    check_accuracy = True
 
     # create directory for writing results
     path = "./output/"
@@ -360,14 +355,14 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
 
-    #for i in range(5):
-    run(train_path, test_path, epochs)
+    #for i in range(20):
+    #    run(train_path, test_path, epochs)
 
 
     if check_accuracy:
 
         x1 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/test_labels.csv", header=None, index_col=False, names=["x1"])
-        x2 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/multiclass_perceptron/multiclass_perceptron_0.6370.csv", header=None, index_col=False, names=["x2"])
+        x2 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_0.7810.csv", header=None, index_col=False, names=["x2"])
 
         x1ToList = x1['x1'].tolist()
         x2ToList = x2['x2'].tolist()
