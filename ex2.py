@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-# np.random.seed(999)
-# random.seed(999)
+np.random.seed(999)
+random.seed(999)
 
 curr_id_col = 0
 label_col = 1
@@ -17,6 +17,7 @@ data_cols = range(6, 134)
 image_hight = 16
 image_width = 8
 min_score = -9999999
+
 
 def print_image(x):
 
@@ -333,8 +334,8 @@ def run(train_path, test_path, epochs):
     char_to_idx = {c: i for i, c in enumerate(chars)}
     idx_to_char = {i: c for c, i in char_to_idx.items()}
 
-    #  multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char)
-    #  multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_char)
+    multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char)
+    multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_char)
 
     char_to_idx["$"] = 26
     idx_to_char[26] = "$"
@@ -345,8 +346,7 @@ if __name__ == '__main__':
 
     train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
     test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
-    epochs = 5
-    check_accuracy = True
+    epochs = 8
 
     # create directory for writing results
     path = "./output/"
@@ -355,21 +355,4 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
 
-    #for i in range(20):
-    #    run(train_path, test_path, epochs)
-
-
-    if check_accuracy:
-
-        x1 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/test_labels.csv", header=None, index_col=False, names=["x1"])
-        x2 = pd.read_csv("/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_0.7810.csv", header=None, index_col=False, names=["x2"])
-
-        x1ToList = x1['x1'].tolist()
-        x2ToList = x2['x2'].tolist()
-
-        check = 0
-        for c1, c2 in zip(x1ToList, x2ToList):
-            if c1 == c2:
-                check += 1
-
-        print(check)
+    run(train_path, test_path, epochs)
