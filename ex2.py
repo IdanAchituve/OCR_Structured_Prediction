@@ -367,5 +367,7 @@ if __name__ == '__main__':
     path = "./output/"
     os.makedirs(path, exist_ok=True)
     os.makedirs(path + "multiclass_perceptron/", exist_ok=True)
-    os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
-    os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
+    os.makedirs(path + "structured_perceptron_unigram/", exist_ok=True)
+    os.makedirs(path + "structured_perceptron_bigram/", exist_ok=True)
+
+    run(train_path, test_path, epochs)
