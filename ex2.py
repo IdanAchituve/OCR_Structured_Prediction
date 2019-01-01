@@ -51,9 +51,11 @@ def multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char):
 
     # init weights
     w = np.zeros((len(char_to_idx), image_hight*image_width))
+    weights = np.zeros((len(char_to_idx), image_hight*image_width))
 
     # train
     train_accuracy = 0  # check accuracy at the char level
+    iters = 0
     for epoch in range(epochs):
         # in each epoch reshuffle the set
         x_train, y_train, _ = get_x_y_shuffled(train)
@@ -66,8 +68,14 @@ def multiclass_perceptron(train, test, epochs, char_to_idx, idx_to_char):
             else:
                 train_accuracy += 1
 
+            weights = weights + w
+            iters += 1
+
         print("Multi-Class Perceptron train accuracy: " + str(train_accuracy / len(x_train)))
         train_accuracy = 0
+
+    # average all weights
+    w = weights/iters
 
     # test
     accum_preds = []
@@ -104,6 +112,8 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
     num_params_per_class = image_hight*image_width
     # init weights as 1 flat vector
     w = np.zeros((len(char_to_idx), num_params_per_class)).flatten()
+    weights = np.zeros((len(char_to_idx), num_params_per_class)).flatten()
+    iters = 0
 
     # train
     train_accuracy = 0  # check accuracy at the char level
@@ -121,6 +131,8 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
 
             # update params
             w = w + phi(x, char_to_idx[y]) - phi(x, max_idx)
+            weights = weights + w
+            iters += 1
 
             # log accuracy
             if max_idx == char_to_idx[y]:
@@ -128,6 +140,9 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
 
         print("Multi-Class Structured Perceptron train accuracy: " + str(train_accuracy / len(x_train)))
         train_accuracy = 0
+
+    # average all weights
+    w = weights/iters
 
     # test
     accum_preds = []
@@ -344,8 +359,8 @@ def run(train_path, test_path, epochs):
 
 if __name__ == '__main__':
 
-    train_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.train.data"
-    test_path = "/home/idan/Desktop/studies/Advanced_Techniques_in_Machine_Learning/ex2/data/letters.test.data"
+    train_path = "./data/letters.train.data"
+    test_path = "./data/letters.test.data"
     epochs = 8
 
     # create directory for writing results
@@ -354,5 +369,3 @@ if __name__ == '__main__':
     os.makedirs(path + "multiclass_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron/", exist_ok=True)
     os.makedirs(path + "multiclass_structured_perceptron_bigram/", exist_ok=True)
-
-    run(train_path, test_path, epochs)
