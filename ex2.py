@@ -170,7 +170,7 @@ def multiclass_structured_perceptron(train, test, epochs, char_to_idx, idx_to_ch
 
     accuracy = test_accuracy/len(test.index)
     print("Multi-Class Structured Perceptron test accuracy: " + str(accuracy))
-    path = "./output/multiclass_structured_perceptron/multiclass_structured_perceptron_" + str(round(accuracy, 4)) + ".csv"
+    path = "./output/structured_perceptron_unigram/multiclass_structured_perceptron_" + str(round(accuracy, 4)) + ".csv"
     write_predictions(path, accum_preds)
 
 
@@ -277,10 +277,13 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
 
     # init weights: one weight vector per character and a 26*27 vector for bigram indicator
     w = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
+    weights = np.zeros(num_eng_chars * num_params_per_class + num_eng_chars*num_eng_chars)
+
     start_time = time.time()
 
     # get the train set as a list of lists. each internal list is a sequence
     train_set = get_seq_as_list(train)
+    iters = 0
 
     # train
     for epoch in range(epochs):
@@ -296,6 +299,8 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
 
             # get the most likely sequence
             y_hat, w = viterbi(seq, w.copy(), num_eng_chars, char_to_idx, True)
+            weights = weights + w
+            iters += len(labels)
 
             # calc accuracy
             train_accuracy += (Y == y_hat).sum()
@@ -303,6 +308,9 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
         elapsed_time = time.time() - start_time
         time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
         print(str(time_str) + "\tMulti-Class Structured Perceptron Bigram train accuracy: " + str(train_accuracy / len(train.index)))
+
+    # average all weights
+    w = weights / iters
 
     # test
     accum_preds = []
@@ -333,9 +341,9 @@ def multiclass_structured_perceptron_bigram(train, test, epochs, char_to_idx, id
     time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
 
     print(str(time_str) + "\tMulti-Class Structured Perceptron Bigram test accuracy: " + str(accuracy))
-    path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".csv"
+    path = "./output/structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".csv"
     write_predictions(path, accum_preds)
-    save_w_path = "./output/multiclass_structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".png"
+    save_w_path = "./output/structured_perceptron_bigram/multiclass_structured_perceptron_bigram_" + str(round(accuracy, 4)) + ".png"
     plot_w(save_w_path, w[num_eng_chars * num_params_per_class:].copy())
 
 
@@ -361,7 +369,7 @@ if __name__ == '__main__':
 
     train_path = "./data/letters.train.data"
     test_path = "./data/letters.test.data"
-    epochs = 8
+    epochs = 5
 
     # create directory for writing results
     path = "./output/"
